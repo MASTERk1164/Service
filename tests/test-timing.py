@@ -3,7 +3,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 source = Path('src/main.c').read_text()
-logic = source[source.index('static int waitUntil('):source.index('static HWND control(')]
+logic = source[source.index('static int waitUntil('):source.index('static DWORD WINAPI synchronize(')]
 stub = r'''
 #include <stdint.h>
 #include <assert.h>

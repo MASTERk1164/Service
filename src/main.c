@@ -8,11 +8,21 @@
 #include <stdio.h>
 
 #define DONE (WM_APP+1)
-static HWND win,date,timebox,retries,interval,start,stop,status,clockbox,earlybox,hundredths;
-static HANDLE cancelEvent,worker;
+#define SYNC_DONE (WM_APP+2)
+static ULONGLONG ticks(void);
+#include "navyism_sync.h"
+static HWND win,date,timebox,retries,interval,start,stop,status,clockbox,earlybox,hundredths,sourcebox,syncbutton,syncstatus,clocklabel;
+static HANDLE cancelEvent,worker,syncWorker;
+static LONGLONG serverOffset,sampleOffset;
+static DWORD sampleRtt;
+static BOOL useServer,syncValid,sampleOk;
+static ULONGLONG syncedAt;
 static HFONT font,clockFont;
 static void updateClock(void){
-    SYSTEMTIME now; WCHAR text[96]; GetLocalTime(&now);
+    SYSTEMTIME now; WCHAR text[96];
+    ULONGLONG value=ticks()+(useServer&&syncValid?serverOffset:0);
+    FILETIME utc={(DWORD)value,(DWORD)(value>>32)},local;
+    FileTimeToLocalFileTime(&utc,&local);FileTimeToSystemTime(&local,&now);
     swprintf(text,96,L"%04u-%02u-%02u  %02u:%02u:%02u",now.wYear,now.wMonth,now.wDay,now.wHour,now.wMinute,now.wSecond);
     SetWindowText(clockbox,text);
 }
@@ -60,12 +70,24 @@ static DWORD WINAPI run(LPVOID unused){
     }
     PostMessage(win,DONE,result,0);return 0;
 }
+static DWORD WINAPI synchronize(LPVOID unused){
+    (void)unused;sampleOk=downloadNavy(&sampleOffset,&sampleRtt);
+    PostMessage(win,SYNC_DONE,0,0);return 0;
+}
+static void syncNow(void){
+    if(syncWorker||worker)return;
+    syncValid=FALSE;SetWindowText(clocklabel,L"PC 시간 · NOL 동기화 중");EnableWindow(start,FALSE);EnableWindow(syncbutton,FALSE);
+    SetWindowText(syncstatus,L"네이비즘 시간 확인 중...");
+    syncWorker=CreateThread(NULL,0,synchronize,NULL,0,NULL);
+    if(!syncWorker){SetWindowText(syncstatus,L"동기화 작업을 시작하지 못했습니다.");EnableWindow(syncbutton,TRUE);}
+}
 static HWND control(LPCWSTR cls,LPCWSTR txt,DWORD style,int x,int y,int w,int h,int id){
     HWND c=CreateWindowEx(0,cls,txt,WS_CHILD|WS_VISIBLE|style,x,y,w,h,win,(HMENU)(INT_PTR)id,GetModuleHandle(NULL),NULL);
     SendMessage(c,WM_SETFONT,(WPARAM)font,TRUE);return c;
 }
-static void enabled(BOOL ready){EnableWindow(date,ready);EnableWindow(timebox,ready);EnableWindow(hundredths,ready);EnableWindow(retries,ready);EnableWindow(interval,ready);EnableWindow(earlybox,ready);EnableWindow(start,ready);EnableWindow(stop,!ready);}
+static void enabled(BOOL ready){EnableWindow(date,ready);EnableWindow(timebox,ready);EnableWindow(hundredths,ready);EnableWindow(retries,ready);EnableWindow(interval,ready);EnableWindow(earlybox,ready);EnableWindow(sourcebox,ready&&!syncWorker);EnableWindow(syncbutton,ready&&useServer&&!syncWorker);EnableWindow(start,ready&&(!useServer||syncValid)&&!syncWorker);EnableWindow(stop,!ready);}
 static void arm(void){
+    if(useServer&&(!syncValid||ticks()-syncedAt>3000000000ULL)){syncValid=FALSE;SetWindowText(syncstatus,L"동기화가 필요합니다. 다시 동기화를 누르세요.");EnableWindow(start,FALSE);return;}
     SYSTEMTIME d,t,utc;FILETIME f;
     BOOL fractionOk;UINT fraction=GetDlgItemInt(win,109,&fractionOk,FALSE);
     if(!fractionOk||fraction>99){MessageBox(win,L"1/100초는 00~99로 입력하세요.",L"입력 확인",MB_OK);return;}
@@ -73,6 +95,7 @@ static void arm(void){
     d.wHour=t.wHour;d.wMinute=t.wMinute;d.wSecond=t.wSecond;d.wMilliseconds=(WORD)(fraction*10);
     if(!TzSpecificLocalTimeToSystemTime(NULL,&d,&utc)||!SystemTimeToFileTime(&utc,&f)){MessageBox(win,L"날짜와 시간을 확인하세요.",L"입력 확인",MB_OK);return;}
     target=((ULONGLONG)f.dwHighDateTime<<32)|f.dwLowDateTime;
+    if(useServer)target=(ULONGLONG)((LONGLONG)target-serverOffset);
     BOOL ok1,ok2;repeatCount=(int)GetDlgItemInt(win,103,&ok1,FALSE);delayMs=(int)GetDlgItemInt(win,104,&ok2,FALSE);
     if(!ok1||!ok2||repeatCount>20||delayMs<10||delayMs>1000){MessageBox(win,L"추가 클릭은 0~20회, 간격은 10~1000ms로 입력하세요.",L"입력 확인",MB_OK);return;}
     earlyClick=SendMessage(earlybox,BM_GETCHECK,0,0)==BST_CHECKED;
@@ -87,44 +110,69 @@ static LRESULT CALLBACK proc(HWND h,UINT m,WPARAM w,LPARAM l){
     switch(m){
     case WM_CREATE:{
         win=h;font=CreateFont(18,0,0,0,FW_NORMAL,0,0,0,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Malgun Gothic");
-        control(L"STATIC",L"현재 PC 시간",0,24,12,450,24,0);
+        clocklabel=control(L"STATIC",L"현재 PC 시간",0,24,12,450,24,0);
         clockbox=control(L"STATIC",L"",SS_CENTER,24,38,456,42,107);
         clockFont=CreateFont(30,0,0,0,FW_BOLD,0,0,0,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Consolas");
         SendMessage(clockbox,WM_SETFONT,(WPARAM)clockFont,TRUE);
         updateClock();SetTimer(h,1,100,NULL);
-        control(L"STATIC",L"예약 시각 · PC 시간 기준 (시:분:초:1/100초)",0,24,94,450,24,0);
-        date=control(DATETIMEPICK_CLASS,L"",DTS_SHORTDATEFORMAT,24,126,220,32,101);
-        timebox=control(DATETIMEPICK_CLASS,L"",DTS_TIMEFORMAT|DTS_UPDOWN,260,126,155,32,102);
+        sourcebox=control(L"BUTTON",L"NOL · 네이비즘 시간 사용 (추정)",WS_TABSTOP|BS_AUTOCHECKBOX,24,90,330,28,110);
+        syncbutton=control(L"BUTTON",L"다시 동기화",WS_TABSTOP,360,90,120,28,111);EnableWindow(syncbutton,FALSE);
+        syncstatus=control(L"STATIC",L"PC 시간 기준 · NOL 선택 시 네이비즘과 동기화",0,24,122,456,36,0);
+        control(L"STATIC",L"예약 시각 · 선택한 시간 기준 (시:분:초:1/100초)",0,24,164,450,24,0);
+        date=control(DATETIMEPICK_CLASS,L"",DTS_SHORTDATEFORMAT,24,196,220,32,101);
+        timebox=control(DATETIMEPICK_CLASS,L"",DTS_TIMEFORMAT|DTS_UPDOWN,260,196,155,32,102);
         DateTime_SetFormat(timebox,L"HH':'mm':'ss");
-        control(L"STATIC",L":",SS_CENTER,416,130,14,24,0);
-        hundredths=control(L"EDIT",L"00",WS_BORDER|ES_NUMBER|ES_CENTER|WS_TABSTOP,432,126,48,32,109);
+        control(L"STATIC",L":",SS_CENTER,416,200,14,24,0);
+        hundredths=control(L"EDIT",L"00",WS_BORDER|ES_NUMBER|ES_CENTER|WS_TABSTOP,432,196,48,32,109);
         SendMessage(hundredths,EM_SETLIMITTEXT,2,0);
         SYSTEMTIME now;GetLocalTime(&now);DateTime_SetSystemtime(date,GDT_VALID,&now);DateTime_SetSystemtime(timebox,GDT_VALID,&now);
-        control(L"STATIC",L"추가 클릭 (0~20회)",0,24,180,220,24,0);
-        retries=control(L"EDIT",L"3",WS_BORDER|ES_NUMBER|WS_TABSTOP,24,209,220,30,103);
-        control(L"STATIC",L"클릭 간격 (10~1000ms)",0,260,180,230,24,0);
-        interval=control(L"EDIT",L"50",WS_BORDER|ES_NUMBER|WS_TABSTOP,260,209,220,30,104);
-        earlybox=control(L"BUTTON",L"지정 시각보다 클릭 간격만큼 먼저 1회 클릭",WS_TABSTOP|BS_AUTOCHECKBOX,24,250,460,30,108);
-        control(L"STATIC",L"첫 클릭 시각의 마우스 위치를 고정해 왼쪽 클릭합니다.\r\n추가 클릭은 첫 클릭의 성공 여부와 관계없이 실행됩니다.\r\n중복 클릭을 원하지 않으면 추가 클릭을 0으로 설정하세요.",0,24,292,460,82,0);
-        start=control(L"BUTTON",L"예약 시작",WS_TABSTOP|BS_DEFPUSHBUTTON,24,392,220,42,105);
-        stop=control(L"BUTTON",L"취소 (Esc)",WS_TABSTOP,260,392,220,42,106);EnableWindow(stop,FALSE);
-        status=control(L"STATIC",L"날짜·시간을 선택하고 예약 시작을 누르세요.\r\n대기 중에는 PC를 켜 두고 잠금·절전 상태를 해제하세요.",0,24,457,460,65,0);
+        control(L"STATIC",L"추가 클릭 (0~20회)",0,24,250,220,24,0);
+        retries=control(L"EDIT",L"3",WS_BORDER|ES_NUMBER|WS_TABSTOP,24,279,220,30,103);
+        control(L"STATIC",L"클릭 간격 (10~1000ms)",0,260,250,230,24,0);
+        interval=control(L"EDIT",L"50",WS_BORDER|ES_NUMBER|WS_TABSTOP,260,279,220,30,104);
+        earlybox=control(L"BUTTON",L"지정 시각보다 클릭 간격만큼 먼저 1회 클릭",WS_TABSTOP|BS_AUTOCHECKBOX,24,320,460,30,108);
+        control(L"STATIC",L"첫 클릭 시각의 마우스 위치를 고정해 왼쪽 클릭합니다.\r\n추가 클릭은 첫 클릭의 성공 여부와 관계없이 실행됩니다.\r\n중복 클릭을 원하지 않으면 추가 클릭을 0으로 설정하세요.",0,24,362,460,82,0);
+        start=control(L"BUTTON",L"예약 시작",WS_TABSTOP|BS_DEFPUSHBUTTON,24,462,220,42,105);
+        stop=control(L"BUTTON",L"취소 (Esc)",WS_TABSTOP,260,462,220,42,106);EnableWindow(stop,FALSE);
+        status=control(L"STATIC",L"날짜·시간을 선택하고 예약 시작을 누르세요.\r\n대기 중에는 PC를 켜 두고 잠금·절전 상태를 해제하세요.",0,24,527,460,65,0);
         cancelEvent=CreateEvent(NULL,TRUE,FALSE,NULL);return 0;}
     case WM_TIMER:if(w==1)updateClock();return 0;
-    case WM_COMMAND:if(LOWORD(w)==105)arm();if(LOWORD(w)==106)SetEvent(cancelEvent);return 0;
+    case SYNC_DONE:
+        if(syncWorker){WaitForSingleObject(syncWorker,INFINITE);CloseHandle(syncWorker);syncWorker=NULL;}
+        if(useServer){
+            syncValid=sampleOk;
+            if(syncValid){
+                serverOffset=sampleOffset;syncedAt=ticks();WCHAR text[160];
+                swprintf(text,160,L"동기화됨 · PC 대비 %+.0fms · 통신 %lums\r\n네이비즘 추정 시간 / 네트워크 오차 가능",(double)serverOffset/10000.0,(unsigned long)sampleRtt);
+                SetWindowText(syncstatus,text);SetWindowText(clocklabel,L"NOL · 네이비즘 기준 시간 (추정)");
+            }else{SetWindowText(syncstatus,L"동기화 실패 · 다시 시도하거나 NOL 체크를 해제하세요.");SetWindowText(clocklabel,L"PC 시간 · NOL 동기화되지 않음");}
+        }
+        enabled(TRUE);updateClock();return 0;
+    case WM_COMMAND:
+        if(LOWORD(w)==105)arm();
+        if(LOWORD(w)==106)SetEvent(cancelEvent);
+        if(LOWORD(w)==110){
+            useServer=SendMessage(sourcebox,BM_GETCHECK,0,0)==BST_CHECKED;
+            syncValid=FALSE;
+            if(useServer){SetWindowText(clocklabel,L"PC 시간 · NOL 동기화 중");syncNow();}
+            else{SetWindowText(clocklabel,L"현재 PC 시간");SetWindowText(syncstatus,L"PC 시간 기준");}
+            enabled(TRUE);updateClock();
+        }
+        if(LOWORD(w)==111)syncNow();
+        return 0;
     case WM_HOTKEY:if(w==1)SetEvent(cancelEvent);return 0;
     case DONE:
         if(worker){WaitForSingleObject(worker,INFINITE);CloseHandle(worker);worker=NULL;}
         if(hotkey){UnregisterHotKey(h,1);hotkey=FALSE;}enabled(TRUE);
         SetWindowText(status,w==0?L"예약 클릭을 완료했습니다.":w==1?L"예약을 취소했습니다.":w==3?L"예약 시각을 2초 이상 지나 클릭하지 않았습니다.\r\n절전 상태와 PC 시간을 확인하고 다시 예약하세요.":L"Windows가 클릭 입력을 허용하지 않았습니다.\r\n대상 프로그램의 권한과 잠금 상태를 확인하세요.");return 0;
-    case WM_CLOSE:SetEvent(cancelEvent);if(worker){WaitForSingleObject(worker,INFINITE);CloseHandle(worker);worker=NULL;}DestroyWindow(h);return 0;
+    case WM_CLOSE:if(syncWorker){WaitForSingleObject(syncWorker,INFINITE);CloseHandle(syncWorker);syncWorker=NULL;}SetEvent(cancelEvent);if(worker){WaitForSingleObject(worker,INFINITE);CloseHandle(worker);worker=NULL;}DestroyWindow(h);return 0;
     case WM_DESTROY:KillTimer(h,1);DeleteObject(clockFont);if(hotkey)UnregisterHotKey(h,1);CloseHandle(cancelEvent);DeleteObject(font);PostQuitMessage(0);return 0;
     }return DefWindowProc(h,m,w,l);
 }
 int WINAPI wWinMain(HINSTANCE inst,HINSTANCE prev,LPWSTR cmd,int show){
     (void)prev;(void)cmd;SetProcessDPIAware();INITCOMMONCONTROLSEX ic={sizeof(ic),ICC_DATE_CLASSES};InitCommonControlsEx(&ic);
     WNDCLASS wc={0};wc.lpfnWndProc=proc;wc.hInstance=inst;wc.hCursor=LoadCursor(NULL,IDC_ARROW);wc.hIcon=LoadIcon(inst,MAKEINTRESOURCE(1));wc.hbrBackground=(HBRUSH)(COLOR_WINDOW+1);wc.lpszClassName=L"ScheduledClickWindow";RegisterClass(&wc);
-    HWND h=CreateWindow(wc.lpszClassName,L"예약 클릭",WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX,CW_USEDEFAULT,CW_USEDEFAULT,525,583,NULL,NULL,inst,NULL);
+    HWND h=CreateWindow(wc.lpszClassName,L"예약 클릭",WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX,CW_USEDEFAULT,CW_USEDEFAULT,525,653,NULL,NULL,inst,NULL);
     if(!h)return 1;
     ShowWindow(h,show);MSG msg;while(GetMessage(&msg,NULL,0,0)>0){if(!IsDialogMessage(h,&msg)){TranslateMessage(&msg);DispatchMessage(&msg);}}return 0;
 }

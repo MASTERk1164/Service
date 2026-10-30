@@ -25,7 +25,7 @@ CreateShortcut "$DESKTOP\예약 클릭.lnk" "$INSTDIR\ScheduledClick.exe"
 WriteUninstaller "$INSTDIR\Uninstall.exe"
 WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ScheduledClick" "DisplayName" "예약 클릭"
 WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ScheduledClick" "UninstallString" '"$INSTDIR\Uninstall.exe"'
-WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ScheduledClick" "DisplayVersion" "1.3.0"
+WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ScheduledClick" "DisplayVersion" "1.4.0"
 WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ScheduledClick" "DisplayIcon" '"$INSTDIR\ScheduledClick.exe",0'
 WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ScheduledClick" "InstallLocation" "$INSTDIR"
 WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ScheduledClick" "QuietUninstallString" '"$INSTDIR\Uninstall.exe" /S'
