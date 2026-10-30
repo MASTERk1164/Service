@@ -35,6 +35,9 @@ int main(void){
  reset();earlyClick=1;stopAfterFirst=1;run(NULL);assert(done==1&&count==1);
  reset();earlyClick=1;now=target;run(NULL);assert(count==4&&clicks[0]==target);
  reset();earlyClick=1;now=target+30000000;run(NULL);assert(done==3&&count==0);
+ reset();earlyClick=1;target=103700000;run(NULL);assert(done==0&&count==5&&clicks[0]==103200000&&clicks[1]==103700000);
+ reset();earlyClick=0;repeatCount=0;target=100100000;run(NULL);assert(count==1&&clicks[0]==target);
+ reset();earlyClick=0;repeatCount=0;target=109900000;run(NULL);assert(count==1&&clicks[0]==target);
  puts("PASS: early/main timing, counts, cancellation, missed early slot, stale deadline");
 }
 '''

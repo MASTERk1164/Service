@@ -8,7 +8,7 @@
 #include <stdio.h>
 
 #define DONE (WM_APP+1)
-static HWND win,date,timebox,retries,interval,start,stop,status,clockbox,earlybox;
+static HWND win,date,timebox,retries,interval,start,stop,status,clockbox,earlybox,hundredths;
 static HANDLE cancelEvent,worker;
 static HFONT font,clockFont;
 static void updateClock(void){
@@ -64,11 +64,13 @@ static HWND control(LPCWSTR cls,LPCWSTR txt,DWORD style,int x,int y,int w,int h,
     HWND c=CreateWindowEx(0,cls,txt,WS_CHILD|WS_VISIBLE|style,x,y,w,h,win,(HMENU)(INT_PTR)id,GetModuleHandle(NULL),NULL);
     SendMessage(c,WM_SETFONT,(WPARAM)font,TRUE);return c;
 }
-static void enabled(BOOL ready){EnableWindow(date,ready);EnableWindow(timebox,ready);EnableWindow(retries,ready);EnableWindow(interval,ready);EnableWindow(earlybox,ready);EnableWindow(start,ready);EnableWindow(stop,!ready);}
+static void enabled(BOOL ready){EnableWindow(date,ready);EnableWindow(timebox,ready);EnableWindow(hundredths,ready);EnableWindow(retries,ready);EnableWindow(interval,ready);EnableWindow(earlybox,ready);EnableWindow(start,ready);EnableWindow(stop,!ready);}
 static void arm(void){
     SYSTEMTIME d,t,utc;FILETIME f;
+    BOOL fractionOk;UINT fraction=GetDlgItemInt(win,109,&fractionOk,FALSE);
+    if(!fractionOk||fraction>99){MessageBox(win,L"1/100초는 00~99로 입력하세요.",L"입력 확인",MB_OK);return;}
     DateTime_GetSystemtime(date,&d);DateTime_GetSystemtime(timebox,&t);
-    d.wHour=t.wHour;d.wMinute=t.wMinute;d.wSecond=t.wSecond;d.wMilliseconds=0;
+    d.wHour=t.wHour;d.wMinute=t.wMinute;d.wSecond=t.wSecond;d.wMilliseconds=(WORD)(fraction*10);
     if(!TzSpecificLocalTimeToSystemTime(NULL,&d,&utc)||!SystemTimeToFileTime(&utc,&f)){MessageBox(win,L"날짜와 시간을 확인하세요.",L"입력 확인",MB_OK);return;}
     target=((ULONGLONG)f.dwHighDateTime<<32)|f.dwLowDateTime;
     BOOL ok1,ok2;repeatCount=(int)GetDlgItemInt(win,103,&ok1,FALSE);delayMs=(int)GetDlgItemInt(win,104,&ok2,FALSE);
@@ -90,10 +92,13 @@ static LRESULT CALLBACK proc(HWND h,UINT m,WPARAM w,LPARAM l){
         clockFont=CreateFont(30,0,0,0,FW_BOLD,0,0,0,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Consolas");
         SendMessage(clockbox,WM_SETFONT,(WPARAM)clockFont,TRUE);
         updateClock();SetTimer(h,1,100,NULL);
-        control(L"STATIC",L"이 PC의 날짜·시간 기준 (초 단위)",0,24,94,450,24,0);
+        control(L"STATIC",L"예약 시각 · PC 시간 기준 (시:분:초:1/100초)",0,24,94,450,24,0);
         date=control(DATETIMEPICK_CLASS,L"",DTS_SHORTDATEFORMAT,24,126,220,32,101);
-        timebox=control(DATETIMEPICK_CLASS,L"",DTS_TIMEFORMAT|DTS_UPDOWN,260,126,220,32,102);
+        timebox=control(DATETIMEPICK_CLASS,L"",DTS_TIMEFORMAT|DTS_UPDOWN,260,126,155,32,102);
         DateTime_SetFormat(timebox,L"HH':'mm':'ss");
+        control(L"STATIC",L":",SS_CENTER,416,130,14,24,0);
+        hundredths=control(L"EDIT",L"00",WS_BORDER|ES_NUMBER|ES_CENTER|WS_TABSTOP,432,126,48,32,109);
+        SendMessage(hundredths,EM_SETLIMITTEXT,2,0);
         SYSTEMTIME now;GetLocalTime(&now);DateTime_SetSystemtime(date,GDT_VALID,&now);DateTime_SetSystemtime(timebox,GDT_VALID,&now);
         control(L"STATIC",L"추가 클릭 (0~20회)",0,24,180,220,24,0);
         retries=control(L"EDIT",L"3",WS_BORDER|ES_NUMBER|WS_TABSTOP,24,209,220,30,103);
