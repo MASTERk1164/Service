@@ -4,6 +4,8 @@ Name "예약 클릭"
 OutFile "../dist/Setup.exe"
 InstallDir "$LOCALAPPDATA\ScheduledClick"
 RequestExecutionLevel user
+!define MUI_ICON "../assets/app.ico"
+!define MUI_UNICON "../assets/app.ico"
 !define MUI_ABORTWARNING
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
@@ -13,6 +15,7 @@ RequestExecutionLevel user
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "Korean"
 Section "예약 클릭"
+SetShellVarContext current
 SetOutPath "$INSTDIR"
 File "../dist/ScheduledClick.exe"
 File "../README.md"
@@ -22,11 +25,15 @@ CreateShortcut "$DESKTOP\예약 클릭.lnk" "$INSTDIR\ScheduledClick.exe"
 WriteUninstaller "$INSTDIR\Uninstall.exe"
 WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ScheduledClick" "DisplayName" "예약 클릭"
 WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ScheduledClick" "UninstallString" '"$INSTDIR\Uninstall.exe"'
-WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ScheduledClick" "DisplayVersion" "1.0.0"
+WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ScheduledClick" "DisplayVersion" "1.2.0"
+WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ScheduledClick" "DisplayIcon" '"$INSTDIR\ScheduledClick.exe",0'
+WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ScheduledClick" "InstallLocation" "$INSTDIR"
+WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ScheduledClick" "QuietUninstallString" '"$INSTDIR\Uninstall.exe" /S'
 WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ScheduledClick" "NoModify" 1
 WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ScheduledClick" "NoRepair" 1
 SectionEnd
 Section "Uninstall"
+SetShellVarContext current
 Delete "$INSTDIR\ScheduledClick.exe"
 Delete "$INSTDIR\README.md"
 Delete "$INSTDIR\Uninstall.exe"
