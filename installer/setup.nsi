@@ -5,10 +5,10 @@ OutFile "../dist/Setup.exe"
 InstallDir "$LOCALAPPDATA\ScheduledClick"
 InstallDirRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ScheduledClick" "InstallLocation"
 RequestExecutionLevel user
-VIProductVersion "1.6.1.0"
+VIProductVersion "1.6.2.0"
 VIAddVersionKey /LANG=1042 "ProductName" "예약 클릭"
 VIAddVersionKey /LANG=1042 "FileDescription" "예약 클릭 설치 프로그램"
-VIAddVersionKey /LANG=1042 "FileVersion" "1.6.1"
+VIAddVersionKey /LANG=1042 "FileVersion" "1.6.2"
 VIAddVersionKey /LANG=1042 "LegalCopyright" ""
 !define MUI_ICON "../assets/app.ico"
 !define MUI_UNICON "../assets/app.ico"
@@ -32,7 +32,7 @@ CreateShortcut "$DESKTOP\예약 클릭.lnk" "$INSTDIR\ScheduledClick.exe"
 WriteUninstaller "$INSTDIR\Uninstall.exe"
 WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ScheduledClick" "DisplayName" "예약 클릭"
 WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ScheduledClick" "UninstallString" '"$INSTDIR\Uninstall.exe"'
-WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ScheduledClick" "DisplayVersion" "1.6.1"
+WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ScheduledClick" "DisplayVersion" "1.6.2"
 WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ScheduledClick" "DisplayIcon" '"$INSTDIR\ScheduledClick.exe",0'
 WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ScheduledClick" "InstallLocation" "$INSTDIR"
 WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ScheduledClick" "QuietUninstallString" '"$INSTDIR\Uninstall.exe" /S'

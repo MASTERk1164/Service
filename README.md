@@ -1,18 +1,18 @@
 # 예약 클릭 (Windows 10/11 x64)
 
-버전: **1.6.1**
+버전: **1.6.2**
 
-[설치 파일 다운로드](https://github.com/MASTERk1164/Service/raw/refs/heads/main/downloads/Setup.exe) · [전체 ZIP 다운로드](https://github.com/MASTERk1164/Service/raw/refs/heads/main/downloads/ScheduledClick-Windows-1.6.1.zip)
+[설치 파일 다운로드](https://github.com/MASTERk1164/Service/raw/refs/heads/main/downloads/Setup.exe) · [전체 ZIP 다운로드](https://github.com/MASTERk1164/Service/raw/refs/heads/main/downloads/ScheduledClick-Windows-1.6.2.zip)
 
 Setup.exe로 설치하면 Windows **설치된 앱**, **시작 메뉴**, **바탕화면**에 예약 클릭이 등록됩니다. Python/.NET은 필요 없습니다. 기존 프로그램을 종료하고 새 Setup.exe를 실행하면 업데이트할 수 있습니다. 설치된 앱에서 제거할 수 있습니다. ScheduledClick.exe는 설치 없이 실행할 수도 있지만, Windows 앱 목록 등록은 Setup.exe로 설치해야 합니다.
 
 ## 예약 방법
 
-모든 클릭은 **PC 시간**을 사용합니다. NOL·네이비즘 동기화 기능은 제거했습니다.
+상단 현재 PC 시계는 `19:59:59.50`처럼 1/100초까지 표시합니다. 현재 시계는 읽기 전용이며 예약 시각의 오른쪽 두 자리 입력란(00~99)에서 1/100초를 지정합니다. 모든 클릭은 **PC 시간**을 사용합니다. NOL·네이비즘 동기화 기능은 제거했습니다.
 
 1. 본 예약 날짜와 시·분·초, 오른쪽 1/100초(00~99)를 입력하세요. 50은 0.50초입니다.
 2. 필요하면 **사전 클릭 1**, **사전 클릭 2**를 체크하고 각각의 시각을 입력하세요. 각 항목은 해당 시각에 **한 번만** 클릭합니다. 체크하지 않은 항목은 실행하지 않습니다.
-3. 사전 클릭의 기본 제안은 본 예약 1초 전과 0.5초 전입니다. 직접 수정한 항목은 본 예약을 바꿔도 유지되므로 예약 전에 확인하세요.
+3. 사전 클릭 1을 체크하면 본 예약 1초 전, 사전 클릭 2를 체크하면 0.5초 전이 자동 입력됩니다. 자동 입력 후 수동 수정할 수 있습니다. 직접 수정한 항목은 본 예약을 바꿔도 유지됩니다. 체크를 해제했다가 다시 체크하면 현재 본 예약 기준으로 해당 항목을 다시 자동 입력합니다.
 4. 본 예약의 추가 클릭(0~20회)과 간격(10~1000ms)을 입력하세요. 기존처럼 본 예약 시각에 최초 1회, 이후 설정한 간격으로 추가 횟수만큼 클릭합니다. 기본값은 추가 3회, 간격 50ms입니다.
 5. 예약 시작을 누르고 클릭할 곳에 마우스를 놓으세요. 최초 클릭 시점의 위치를 저장해 모든 클릭에 사용합니다. Esc 또는 취소 버튼으로 사전·본 예약을 모두 취소합니다.
 
@@ -36,8 +36,8 @@ Linux: MinGW-w64 GCC와 NSIS를 설치하고 `bash scripts/build.sh`를 실행�
 
 Windows: MSYS2 UCRT64/MinGW-w64 GCC와 NSIS를 설치하고 해당 셸에서 `bash scripts/build.sh`를 실행합니다. 필요하면 `CC=gcc MAKENSIS='/c/Program Files (x86)/NSIS/makensis.exe' bash scripts/build.sh`로 경로를 지정하세요.
 
-`python3 tests/test-timing.py`와 `python3 tests/test-input-time.py`는 실제 소스의 예약·시각 해석 로직을 Windows API 대역으로 검증합니다. 실제 Windows GUI·입력·설치·제거 과정은 이 환경에서 실행 검증하지 않았습니다. 먼저 무해한 창에서 몇 초 뒤 예약과 Esc 취소를 확인하세요.
+`python3 tests/test-timing.py`, `python3 tests/test-input-time.py`, `python3 tests/test-auto-fill.py`는 실제 소스의 예약·시각 해석 로직을 Windows API 대역으로 검증합니다. 실제 Windows GUI·입력·설치·제거 과정은 이 환경에서 실행 검증하지 않았습니다. 먼저 무해한 창에서 몇 초 뒤 예약과 Esc 취소를 확인하세요.
 
 ## 다운로드 경고와 검토 범위
 
-Chrome 다운로드 경고의 원인은 아직 확정하지 못했습니다. 1.6.1은 마우스 위치 이동 실패 시 클릭을 중지하도록 수정한 버전이며, Chrome 경고 해결을 보장하지 않습니다. 코드 서명과 백신 검사 결과는 확보하지 못했습니다. 자세한 검토 내용은 [SECURITY-REVIEW.md](SECURITY-REVIEW.md)를 참고하세요.
+Chrome 다운로드 경고의 원인은 아직 확정하지 못했습니다. 1.6.2은 마우스 위치 이동 실패 시 클릭을 중지하도록 수정한 버전이며, Chrome 경고 해결을 보장하지 않습니다. 코드 서명과 백신 검사 결과는 확보하지 못했습니다. 자세한 검토 내용은 [SECURITY-REVIEW.md](SECURITY-REVIEW.md)를 참고하세요.

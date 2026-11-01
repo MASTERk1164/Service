@@ -19,7 +19,7 @@ static void updateClock(void){
     ULONGLONG value=ticks();
     FILETIME utc={(DWORD)value,(DWORD)(value>>32)},local;
     FileTimeToLocalFileTime(&utc,&local);FileTimeToSystemTime(&local,&now);
-    swprintf(text,96,L"%04u-%02u-%02u  %02u:%02u:%02u",now.wYear,now.wMonth,now.wDay,now.wHour,now.wMinute,now.wSecond);
+    swprintf(text,96,L"%04u-%02u-%02u  %02u:%02u:%02u.%02u",now.wYear,now.wMonth,now.wDay,now.wHour,now.wMinute,now.wSecond,now.wMilliseconds/10);
     SetWindowText(clockbox,text);
 }
 static ULONGLONG target,preTarget[2];
@@ -106,7 +106,8 @@ static void defaultPreTimes(void){
     for(int i=0;i<2;i++)if(!preEdited[i]){
         ULONGLONG v=base-(i==0?10000000ULL:5000000ULL);
         f.dwLowDateTime=(DWORD)v;f.dwHighDateTime=(DWORD)(v>>32);FileTimeToSystemTime(&f,&t);
-        DateTime_SetSystemtime(pretime[i],GDT_VALID,&t);SetDlgItemInt(win,121+i*3,t.wMilliseconds/10,FALSE);
+        DateTime_SetSystemtime(pretime[i],GDT_VALID,&t);
+        WCHAR text[3];swprintf(text,3,L"%02u",t.wMilliseconds/10);SetWindowText(prefraction[i],text);
     }
     updating=FALSE;
 }
@@ -137,13 +138,14 @@ static LRESULT CALLBACK proc(HWND h,UINT m,WPARAM w,LPARAM l){
         win=h;font=CreateFont(18,0,0,0,FW_NORMAL,0,0,0,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Malgun Gothic");
         control(L"STATIC",L"현재 PC 시간",0,24,12,450,24,0);
         clockbox=control(L"STATIC",L"",SS_CENTER,24,38,456,42,107);
-        clockFont=CreateFont(30,0,0,0,FW_BOLD,0,0,0,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Consolas");
+        clockFont=CreateFont(26,0,0,0,FW_BOLD,0,0,0,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Consolas");
         SendMessage(clockbox,WM_SETFONT,(WPARAM)clockFont,TRUE);
-        updateClock();SetTimer(h,1,100,NULL);
+        updateClock();SetTimer(h,1,10,NULL);
         control(L"STATIC",L"본 예약 날짜 · PC 시간 (시:분:초:1/100초)",0,24,94,460,24,0);
         date=control(DATETIMEPICK_CLASS,L"",DTS_SHORTDATEFORMAT,24,124,220,32,101);
         timebox=control(DATETIMEPICK_CLASS,L"",DTS_TIMEFORMAT|DTS_UPDOWN,260,124,155,32,102);
         DateTime_SetFormat(timebox,L"HH':'mm':'ss");
+        control(L"STATIC",L".",SS_CENTER,416,128,14,24,0);
         hundredths=control(L"EDIT",L"00",WS_BORDER|ES_NUMBER|ES_CENTER|WS_TABSTOP,432,124,48,32,109);
         SendMessage(hundredths,EM_SETLIMITTEXT,2,0);
         updating=TRUE;
@@ -151,6 +153,7 @@ static LRESULT CALLBACK proc(HWND h,UINT m,WPARAM w,LPARAM l){
             prebox[i]=control(L"BUTTON",i==0?L"사전 클릭 1 (1회)":L"사전 클릭 2 (1회)",WS_TABSTOP|BS_AUTOCHECKBOX,24,174+i*40,225,32,119+i*3);
             pretime[i]=control(DATETIMEPICK_CLASS,L"",DTS_TIMEFORMAT|DTS_UPDOWN,260,174+i*40,155,32,120+i*3);
             DateTime_SetFormat(pretime[i],L"HH':'mm':'ss");
+            control(L"STATIC",L".",SS_CENTER,416,178+i*40,14,24,0);
             prefraction[i]=control(L"EDIT",L"00",WS_BORDER|ES_NUMBER|ES_CENTER|WS_TABSTOP,432,174+i*40,48,32,121+i*3);
             SendMessage(prefraction[i],EM_SETLIMITTEXT,2,0);
         }
@@ -160,7 +163,7 @@ static LRESULT CALLBACK proc(HWND h,UINT m,WPARAM w,LPARAM l){
         retries=control(L"EDIT",L"3",WS_BORDER|ES_NUMBER|WS_TABSTOP,24,279,220,30,103);
         control(L"STATIC",L"클릭 간격 (10~1000ms)",0,260,250,230,24,0);
         interval=control(L"EDIT",L"50",WS_BORDER|ES_NUMBER|WS_TABSTOP,260,279,220,30,104);
-        control(L"STATIC",L"사전 클릭은 체크한 시각에 각각 1회 실행합니다.\r\n기본 제안: 본 예약 1초 전 / 0.5초 전 (직접 수정 가능).\r\n본 예약은 최초 1회 + 추가 횟수만큼 그대로 실행합니다.\r\n최초 클릭 위치 고정 · Esc로 모든 클릭 취소",0,24,326,460,110,0);
+        control(L"STATIC",L"사전 클릭은 체크한 시각에 각각 1회 실행합니다.\r\n체크하면 본 예약 1초 전 / 0.5초 전 자동 입력·수정 가능.\r\n본 예약은 최초 1회 + 추가 횟수만큼 그대로 실행합니다.\r\n최초 클릭 위치 고정 · Esc로 모든 클릭 취소",0,24,326,460,110,0);
         start=control(L"BUTTON",L"예약 시작",WS_TABSTOP|BS_DEFPUSHBUTTON,24,462,220,42,105);
         stop=control(L"BUTTON",L"취소 (Esc)",WS_TABSTOP,260,462,220,42,106);EnableWindow(stop,FALSE);
         status=control(L"STATIC",L"날짜·시간을 선택하고 예약 시작을 누르세요.\r\n대기 중에는 PC를 켜 두고 잠금·절전 상태를 해제하세요.",0,24,527,460,65,0);
@@ -176,6 +179,10 @@ static LRESULT CALLBACK proc(HWND h,UINT m,WPARAM w,LPARAM l){
     case WM_COMMAND:
         if(LOWORD(w)==105&&!worker)arm();
         if(LOWORD(w)==106)SetEvent(cancelEvent);
+        for(int i=0;i<2;i++)if(LOWORD(w)==119+i*3&&HIWORD(w)==BN_CLICKED&&!worker&&
+            SendMessage(prebox[i],BM_GETCHECK,0,0)==BST_CHECKED){
+            preEdited[i]=FALSE;defaultPreTimes();
+        }
         if(HIWORD(w)==EN_CHANGE&&pretime[1]&&!updating){
             for(int i=0;i<2;i++)if(LOWORD(w)==121+i*3)preEdited[i]=TRUE;
             if(LOWORD(w)==109)defaultPreTimes();
