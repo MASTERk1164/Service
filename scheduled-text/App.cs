@@ -144,7 +144,7 @@ internal sealed class MainWindow : Form
     readonly DateTimePicker date = new DateTimePicker(), time = new DateTimePicker();
     readonly TextBox phrase = new TextBox();
     readonly Label location = new Label(), status = new Label();
-    readonly Button pick = new Button(), start = new Button(), stop = new Button();
+    readonly Button pick = new Button(), start = new Button(), stop = new Button(), test = new Button();
     readonly Timer timer = new Timer();
     readonly Schedule schedule = new Schedule();
     readonly ClipboardSession clipboard = new ClipboardSession();
@@ -161,10 +161,10 @@ internal sealed class MainWindow : Form
 
     internal MainWindow()
     {
-        Text = "예약 문구 입력 v2.1 · 붙여넣기";
-        Font = new Font("Malgun Gothic", 10); ClientSize = new Size(640, 760);
-        AutoScaleMode = AutoScaleMode.Dpi; MinimumSize = new Size(620, 730);
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(18), ColumnCount = 1, RowCount = 13 };
+        Text = "예약 문구 입력 v2.2 · 설치 지원";
+        Font = new Font("Malgun Gothic", 10); ClientSize = new Size(660, 800);
+        AutoScaleMode = AutoScaleMode.Dpi; MinimumSize = new Size(640, 770);
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(18), ColumnCount = 1, RowCount = 14 };
         Controls.Add(layout);
         layout.Controls.Add(new Label { Text = "예약 클릭 + 문구 입력", AutoSize = true, Font = new Font(Font, FontStyle.Bold) });
         mode.DropDownStyle = ComboBoxStyle.DropDownList;
@@ -185,17 +185,18 @@ internal sealed class MainWindow : Form
         phrase.MaxLength = 16000; phrase.Dock = DockStyle.Fill; phrase.MinimumSize = new Size(100, 160);
         layout.Controls.Add(phrase);
         layout.RowStyles.Clear();
-        for (int i = 0; i < 13; i++) layout.RowStyles.Add(new RowStyle(i == 6 ? SizeType.Percent : SizeType.AutoSize, i == 6 ? 100 : 0));
+        for (int i = 0; i < 14; i++) layout.RowStyles.Add(new RowStyle(i == 6 ? SizeType.Percent : SizeType.AutoSize, i == 6 ? 100 : 0));
         enter.Text = "입력 후 Enter 한 번 누르기"; enter.AutoSize = true; enter.Checked = true; layout.Controls.Add(enter);
         returnToWork.Text = "입력 후 작업하던 창과 마우스 위치로 돌아가기"; returnToWork.AutoSize = true; returnToWork.Checked = true; layout.Controls.Add(returnToWork);
         layout.Controls.Add(Caption("문구 전체를 붙여넣고 1.2초 후 Enter · 클립보드를 잠시 사용합니다."));
         start.Text = "예약 시작"; start.Size = new Size(260, 40);
         stop.Text = "취소 (Esc)"; stop.Size = new Size(260, 40); stop.Enabled = false;
         layout.Controls.Add(Row(start, stop));
+        test.Text = "5초 후 시험 입력 (1회)"; test.AutoSize = true; layout.Controls.Add(test);
         status.AutoSize = true; status.MinimumSize = new Size(0, 95); status.Text = "대기 중 · 위치와 문구를 설정하세요."; layout.Controls.Add(status);
         layout.Controls.Add(Caption("대기 중 다른 작업 가능 · 입력할 때는 대상 창을 잠깐 활성화합니다."));
         pick.Click += delegate { SelectPosition(); };
-        start.Click += delegate { StartSchedule(); }; stop.Click += delegate { Finish("취소했습니다. 이미 입력된 내용은 유지됩니다."); };
+        start.Click += delegate { StartSchedule(false); }; test.Click += delegate { StartSchedule(true); }; stop.Click += delegate { Finish("취소했습니다. 이미 입력된 내용은 유지됩니다."); };
         repeat.CheckedChanged += delegate { if (repeat.Checked) mode.SelectedIndex = 0; Configure(); };
         mode.SelectedIndexChanged += delegate { Configure(); };
         timer.Interval = 20; timer.Tick += delegate { Tick(); }; timer.Start(); Configure();
@@ -209,7 +210,8 @@ internal sealed class MainWindow : Form
         mode.Enabled = !active && !repeat.Checked;
         minutes.Enabled = seconds.Enabled = !active && (repeat.Checked || mode.SelectedIndex == 0);
         date.Enabled = time.Enabled = !active && !repeat.Checked && mode.SelectedIndex == 1;
-        pick.Enabled = phrase.Enabled = repeat.Enabled = enter.Enabled = returnToWork.Enabled = start.Enabled = !active;
+        pick.Enabled = phrase.Enabled = repeat.Enabled = enter.Enabled = returnToWork.Enabled = start.Enabled = test.Enabled = !active;
+        start.Text = active ? "예약 실행 중" : "예약 시작";
         stop.Enabled = active;
     }
     protected override void OnShown(EventArgs e) {
@@ -250,13 +252,15 @@ internal sealed class MainWindow : Form
         location.Text = String.Format("저장: X {0} / Y {1}", p.X, p.Y);
         status.Text = "대상 창과 위치 저장 완료 · 예약 시작 후 다른 작업을 하셔도 됩니다.";
     }
-    void StartSchedule() {
+    void StartSchedule(bool testing) {
+        if (active) return;
         try {
             if (!Desktop.IsWindow(target)) throw new InvalidOperationException("대상 입력칸 위에서 F8로 위치를 지정하세요.");
             if (phrase.Text.Length == 0) throw new InvalidOperationException("입력할 문구를 적어 주세요.");
             long interval = ((long)minutes.Value * 60 + (long)seconds.Value) * 1000;
             long delay;
-            if (repeat.Checked || mode.SelectedIndex == 0) {
+            if (testing) { delay = 5000; interval = 5000; }
+            else if (repeat.Checked || mode.SelectedIndex == 0) {
                 if (interval == 0) throw new InvalidOperationException("대기 / 반복 간격을 1초 이상으로 설정하세요.");
                 delay = repeat.Checked ? 60000 : interval;
             } else {
@@ -266,11 +270,11 @@ internal sealed class MainWindow : Form
                 interval = Math.Max(1, delay);
             }
             escRegistered = Desktop.RegisterHotKey(Handle, 2, 0x4000, 0x1B);
-            if (!escRegistered) throw new InvalidOperationException("Esc 취소 단축키 등록 실패. 다른 예약 프로그램을 종료해 주세요.");
+            // A busy global Esc key must not prevent starting; the cancel button always works.
             borrowedDesktop = false; pending = phrase.Text.Replace("\r\n", "\n").Replace('\r', '\n');
-            appendEnter = enter.Checked; schedule.Start(Desktop.Now, delay, interval, repeat.Checked);
-            lastTick = Desktop.Now; stage = 0; active = true; Configure(); Progress();
-        } catch (Exception ex) { Finish(ex.Message); }
+            appendEnter = enter.Checked; schedule.Start(Desktop.Now, delay, interval, !testing && repeat.Checked);
+            lastTick = Desktop.Now; stage = 0; active = true; timer.Start(); Configure(); Progress();
+        } catch (Exception ex) { Finish("시작 실패: " + ex.Message); MessageBox.Show(this, ex.Message, "예약 시작 실패", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
     }
     void PrepareTarget() {
         if (!Desktop.IsWindow(target)) throw new InvalidOperationException("저장한 대상 창이 닫혔습니다. 위치를 다시 지정하세요.");
@@ -304,7 +308,7 @@ internal sealed class MainWindow : Form
         try {
             long now = Desktop.Now;
             if (!active) return;
-            if (now - lastTick > 2000) throw new InvalidOperationException("절전 또는 실행 지연을 감지하여 중단했습니다.");
+            if (stage != 0 && now - lastTick > 2000) throw new InvalidOperationException("절전 또는 실행 지연을 감지하여 중단했습니다.");
             lastTick = now;
             if (stage == 0 && schedule.Ready(now)) {
                 if (schedule.Late(now)) throw new InvalidOperationException("예약을 2초 이상 놓쳐 중단했습니다.");
@@ -338,7 +342,7 @@ internal sealed class MainWindow : Form
     void Progress() {
         long now = Desktop.Now;
         string phase = stage == 0 ? "대기 중" : stage <= 2 ? "입력칸 준비" : stage <= 4 ? "붙여넣기 준비" : stage == 5 ? "붙여넣기 반영 대기" : "Enter 반영 대기";
-        status.Text = "예약 시작됨 · " + phase + " · Esc로 취소\r\n경과 " + Duration(now - schedule.Started)
+        status.Text = "예약 시작됨 · " + phase + (escRegistered ? " · Esc / 취소 버튼으로 중단" : " · 취소 버튼으로 중단 (Esc 사용 불가)") + "\r\n경과 " + Duration(now - schedule.Started)
             + " / 다음 입력까지 " + Duration(Math.Max(0, schedule.Due - now + 999))
             + "\r\n" + (schedule.Repeating ? "반복 실행" : "한 번 실행") + " · 입력 신호 전송 " + schedule.Completed + "회";
     }
@@ -368,7 +372,13 @@ internal sealed class MainWindow : Form
         foreach (PositionPicker picker in pickers) picker.Dispose();
         base.OnFormClosed(e);
     }
-    [STAThread] static void Main() {
-        Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false); Application.Run(new MainWindow());
+    [STAThread] static void Main(string[] args) {
+        Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
+        if (args.Length == 1 && args[0] == "/install") { Installation.Install(); return; }
+        bool first;
+        using (var mutex = new System.Threading.Mutex(true, "Local\\ScheduledText.Desktop.v2", out first)) {
+            if (!first) { MessageBox.Show("예약 문구 입력이 이미 실행 중입니다. 기존 창을 사용하거나 종료 후 다시 실행하세요.", "중복 실행 안내"); return; }
+            try { Application.Run(new MainWindow()); } finally { mutex.ReleaseMutex(); }
+        }
     }
 }
