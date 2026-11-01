@@ -1,10 +1,10 @@
 # 예약 클릭 (Windows 10/11 x64)
 
-버전: **1.6.2**
+버전: **1.6.3**
 
-[설치 파일 다운로드](https://github.com/MASTERk1164/Service/raw/refs/heads/main/downloads/Setup.exe) · [전체 ZIP 다운로드](https://github.com/MASTERk1164/Service/raw/refs/heads/main/downloads/ScheduledClick-Windows-1.6.2.zip)
+[설치 파일 다운로드](https://github.com/MASTERk1164/Service/raw/refs/heads/main/downloads/Time%20Click.exe) · [전체 ZIP 다운로드](https://github.com/MASTERk1164/Service/raw/refs/heads/main/downloads/ScheduledClick-Windows-1.6.3.zip)
 
-Setup.exe로 설치하면 Windows **설치된 앱**, **시작 메뉴**, **바탕화면**에 예약 클릭이 등록됩니다. Python/.NET은 필요 없습니다. 기존 프로그램을 종료하고 새 Setup.exe를 실행하면 업데이트할 수 있습니다. 설치된 앱에서 제거할 수 있습니다. ScheduledClick.exe는 설치 없이 실행할 수도 있지만, Windows 앱 목록 등록은 Setup.exe로 설치해야 합니다.
+Time Click.exe로 설치하면 Windows **설치된 앱**, **시작 메뉴**, **바탕화면**에 예약 클릭이 등록됩니다. Python/.NET은 필요 없습니다. 기존 프로그램을 종료하고 새 Time Click.exe를 실행하면 업데이트할 수 있습니다. 설치된 앱에서 제거할 수 있습니다. ScheduledClick.exe는 설치 없이 실행할 수도 있지만, Windows 앱 목록 등록은 Time Click.exe로 설치해야 합니다.
 
 ## 예약 방법
 
@@ -40,4 +40,8 @@ Windows: MSYS2 UCRT64/MinGW-w64 GCC와 NSIS를 설치하고 해당 셸에서 `ba
 
 ## 다운로드 경고와 검토 범위
 
-Chrome 다운로드 경고의 원인은 아직 확정하지 못했습니다. 1.6.2은 마우스 위치 이동 실패 시 클릭을 중지하도록 수정한 버전이며, Chrome 경고 해결을 보장하지 않습니다. 코드 서명과 백신 검사 결과는 확보하지 못했습니다. 자세한 검토 내용은 [SECURITY-REVIEW.md](SECURITY-REVIEW.md)를 참고하세요.
+Chrome 다운로드 경고의 원인은 아직 확정하지 못했습니다. 1.6.3은 마우스 위치 이동 실패 시 클릭을 중지하도록 수정한 버전이며, Chrome 경고 해결을 보장하지 않습니다. 코드 서명과 백신 검사 결과는 확보하지 못했습니다. 자세한 검토 내용은 [SECURITY-REVIEW.md](SECURITY-REVIEW.md)를 참고하세요.
+
+## 지난 사전 클릭 확인
+
+본 예약이 미래여도 체크된 사전 클릭 중 하나가 과거면 예약을 시작하지 않습니다. 1.6.3부터 알림에 해당 항목과 날짜·시간을 표시합니다. **사전 시각 다시 맞추기** 버튼을 누르면 수동 입력값을 본 예약 1초 전과 0.5초 전으로 다시 설정합니다. 체크 상태는 그대로 유지합니다.

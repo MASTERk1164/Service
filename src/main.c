@@ -8,7 +8,7 @@
 #include <stdio.h>
 
 #define DONE (WM_APP+1)
-static HWND win,date,timebox,retries,interval,start,stop,status,clockbox,hundredths;
+static HWND win,date,timebox,retries,interval,start,stop,status,clockbox,hundredths,resetpre;
 static HWND prebox[2],pretime[2],prefraction[2];
 static HANDLE cancelEvent,worker;
 static BOOL preEdited[2],updating;
@@ -74,7 +74,7 @@ static HWND control(LPCWSTR cls,LPCWSTR txt,DWORD style,int x,int y,int w,int h,
 }
 static void enabled(BOOL ready){
     EnableWindow(date,ready);EnableWindow(timebox,ready);EnableWindow(hundredths,ready);
-    EnableWindow(retries,ready);EnableWindow(interval,ready);EnableWindow(start,ready);EnableWindow(stop,!ready);
+    EnableWindow(resetpre,ready);EnableWindow(retries,ready);EnableWindow(interval,ready);EnableWindow(start,ready);EnableWindow(stop,!ready);
     for(int i=0;i<2;i++){EnableWindow(prebox[i],ready);EnableWindow(pretime[i],ready);EnableWindow(prefraction[i],ready);}
 }
 /* Local calendar arithmetic first, then convert each slot separately for DST. */
@@ -123,8 +123,14 @@ static void arm(void){
         }
     }
     ULONGLONG now=ticks();
-    if(target<=now||(preEnabled[0]&&preTarget[0]<=now)||(preEnabled[1]&&preTarget[1]<=now)){
-        MessageBox(win,L"선택한 모든 클릭 시각이 현재 PC 시간보다 뒤여야 합니다.",L"입력 확인",MB_OK);return;
+    int past=target<=now?2:(preEnabled[0]&&preTarget[0]<=now)?0:(preEnabled[1]&&preTarget[1]<=now)?1:-1;
+    if(past>=0){
+        ULONGLONG value=past==2?target:preTarget[past];
+        FILETIME utc={(DWORD)value,(DWORD)(value>>32)},local;SYSTEMTIME t;WCHAR text[384];
+        FileTimeToLocalFileTime(&utc,&local);FileTimeToSystemTime(&local,&t);
+        swprintf(text,384,L"%ls 시각이 이미 지났습니다.\r\n%04u-%02u-%02u %02u:%02u:%02u.%02u\r\n\r\n본 예약이 미래여도 체크한 사전 클릭이 과거면 시작할 수 없습니다.\r\n해당 시각을 수정하거나 체크를 해제하세요.\r\n'사전 시각 다시 맞추기'로 두 시각을 자동 설정할 수 있습니다.",
+            past==2?L"본 예약":past==0?L"사전 클릭 1":L"사전 클릭 2",t.wYear,t.wMonth,t.wDay,t.wHour,t.wMinute,t.wSecond,t.wMilliseconds/10);
+        MessageBox(win,text,L"지난 클릭 시각 확인",MB_OK|MB_ICONINFORMATION);return;
     }
     hotkey=RegisterHotKey(win,1,MOD_NOREPEAT,VK_ESCAPE);
     if(!hotkey){MessageBox(win,L"Esc 취소 키를 등록하지 못했습니다. 다른 프로그램이 Esc 단축키를 사용 중인지 확인하세요.",L"예약 실패",MB_OK|MB_ICONERROR);return;}
@@ -163,7 +169,8 @@ static LRESULT CALLBACK proc(HWND h,UINT m,WPARAM w,LPARAM l){
         retries=control(L"EDIT",L"3",WS_BORDER|ES_NUMBER|WS_TABSTOP,24,279,220,30,103);
         control(L"STATIC",L"클릭 간격 (10~1000ms)",0,260,250,230,24,0);
         interval=control(L"EDIT",L"50",WS_BORDER|ES_NUMBER|WS_TABSTOP,260,279,220,30,104);
-        control(L"STATIC",L"사전 클릭은 체크한 시각에 각각 1회 실행합니다.\r\n체크하면 본 예약 1초 전 / 0.5초 전 자동 입력·수정 가능.\r\n본 예약은 최초 1회 + 추가 횟수만큼 그대로 실행합니다.\r\n최초 클릭 위치 고정 · Esc로 모든 클릭 취소",0,24,326,460,110,0);
+        control(L"STATIC",L"사전 클릭은 체크한 시각에 각각 1회 실행합니다.\r\n체크하면 본 예약 1초 전 / 0.5초 전 자동 입력·수정 가능.\r\n본 예약은 최초 1회 + 추가 횟수만큼 그대로 실행합니다.\r\n최초 클릭 위치 고정 · Esc로 모든 클릭 취소",0,24,326,460,88,0);
+        resetpre=control(L"BUTTON",L"사전 시각 다시 맞추기",WS_TABSTOP,24,420,456,30,125);
         start=control(L"BUTTON",L"예약 시작",WS_TABSTOP|BS_DEFPUSHBUTTON,24,462,220,42,105);
         stop=control(L"BUTTON",L"취소 (Esc)",WS_TABSTOP,260,462,220,42,106);EnableWindow(stop,FALSE);
         status=control(L"STATIC",L"날짜·시간을 선택하고 예약 시작을 누르세요.\r\n대기 중에는 PC를 켜 두고 잠금·절전 상태를 해제하세요.",0,24,527,460,65,0);
@@ -179,6 +186,7 @@ static LRESULT CALLBACK proc(HWND h,UINT m,WPARAM w,LPARAM l){
     case WM_COMMAND:
         if(LOWORD(w)==105&&!worker)arm();
         if(LOWORD(w)==106)SetEvent(cancelEvent);
+        if(LOWORD(w)==125&&!worker){preEdited[0]=preEdited[1]=FALSE;defaultPreTimes();}
         for(int i=0;i<2;i++)if(LOWORD(w)==119+i*3&&HIWORD(w)==BN_CLICKED&&!worker&&
             SendMessage(prebox[i],BM_GETCHECK,0,0)==BST_CHECKED){
             preEdited[i]=FALSE;defaultPreTimes();
