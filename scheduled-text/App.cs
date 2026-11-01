@@ -29,6 +29,7 @@ internal static class Desktop
     [DllImport("user32.dll")] internal static extern bool ScreenToClient(IntPtr w, ref POINT p);
     [DllImport("user32.dll")] internal static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll", SetLastError=true)] private static extern uint SendInput(uint n, Input[] inputs, int size);
+    [DllImport("user32.dll")] internal static extern uint GetClipboardSequenceNumber();
     [DllImport("kernel32.dll")] private static extern ulong GetTickCount64();
     internal static long Now { get { return checked((long)GetTickCount64()); } }
     internal static IntPtr Root(IntPtr h) { return h == IntPtr.Zero ? h : GetAncestor(h, 2); }
@@ -46,6 +47,18 @@ internal static class Desktop
         Input a = new Input(), b = new Input();
         a.Data.Mouse.Flags = 2; b.Data.Mouse.Flags = 4; Send(a, b);
     }
+    internal static void Paste() {
+        Input ctrl = new Input(), v = new Input(), vUp = new Input(), ctrlUp = new Input();
+        ctrl.Type = v.Type = vUp.Type = ctrlUp.Type = 1;
+        ctrl.Data.Keyboard.Key = ctrlUp.Data.Keyboard.Key = 0x11;
+        v.Data.Keyboard.Key = vUp.Data.Keyboard.Key = 0x56;
+        vUp.Data.Keyboard.Flags = ctrlUp.Data.Keyboard.Flags = 2;
+        Input[] inputs = new Input[] { ctrl, v, vUp, ctrlUp };
+        if (SendInput(4, inputs, Marshal.SizeOf(typeof(Input))) != 4) {
+            SendInput(2, new Input[] { vUp, ctrlUp }, Marshal.SizeOf(typeof(Input)));
+            throw new InvalidOperationException("붙여넣기 키 전송에 실패했습니다.");
+        }
+    }
     internal static void Character(char c)
     {
         Input a = new Input(), b = new Input(); a.Type = b.Type = 1;
@@ -55,6 +68,51 @@ internal static class Desktop
     }
 }
 
+
+// Clipboard data is only used for the explicitly requested paste operation.
+internal sealed class ClipboardSession {
+    DataObject saved;
+    bool owned;
+    uint sequence;
+    internal void Begin(string text) {
+        if (owned) throw new InvalidOperationException("이전 붙여넣기가 아직 끝나지 않았습니다.");
+        uint before = Desktop.GetClipboardSequenceNumber();
+        IDataObject original = Clipboard.GetDataObject();
+        DataObject snapshot = null;
+        if (original != null) {
+            snapshot = new DataObject();
+            foreach (string format in original.GetFormats(false)) {
+                object value = original.GetData(format, false);
+                if (value == null) throw new InvalidOperationException("기존 클립보드를 보관하지 못해 입력을 중단했습니다.");
+                var stream = value as System.IO.MemoryStream;
+                if (stream != null) value = new System.IO.MemoryStream(stream.ToArray());
+                var image = value as Bitmap;
+                if (image != null) value = image.Clone();
+                snapshot.SetData(format, false, value);
+            }
+        }
+        if (Desktop.GetClipboardSequenceNumber() != before)
+            throw new InvalidOperationException("클립보드가 변경되어 입력을 중단했습니다.");
+        saved = snapshot;
+        Clipboard.SetText(text, TextDataFormat.UnicodeText);
+        sequence = Desktop.GetClipboardSequenceNumber(); owned = true;
+    }
+    internal void Validate() {
+        if (!owned || Desktop.GetClipboardSequenceNumber() != sequence)
+            throw new InvalidOperationException("붙여넣기 전에 클립보드가 변경되어 중단했습니다.");
+    }
+    internal void Restore() {
+        if (!owned) return;
+        bool unchanged = Desktop.GetClipboardSequenceNumber() == sequence;
+        owned = false;
+        try {
+            // Do not overwrite content copied by the user during automated input.
+            if (unchanged) {
+                if (saved == null) Clipboard.Clear(); else Clipboard.SetDataObject(saved, true);
+            }
+        } finally { saved = null; }
+    }
+}
 
 internal sealed class PositionPicker : Form
 {
@@ -89,6 +147,7 @@ internal sealed class MainWindow : Form
     readonly Button pick = new Button(), start = new Button(), stop = new Button();
     readonly Timer timer = new Timer();
     readonly Schedule schedule = new Schedule();
+    readonly ClipboardSession clipboard = new ClipboardSession();
     Desktop.POINT position, clientPosition, previousCursor;
     IntPtr previousWindow;
     bool borrowedDesktop;
@@ -96,13 +155,13 @@ internal sealed class MainWindow : Form
     IntPtr target;
     bool active, escRegistered, f8Registered;
     long inputDue, lastTick;
-    int stage, offset;
+    int stage;
     string pending;
     bool appendEnter;
 
     internal MainWindow()
     {
-        Text = "예약 문구 입력";
+        Text = "예약 문구 입력 v2.1 · 붙여넣기";
         Font = new Font("Malgun Gothic", 10); ClientSize = new Size(640, 760);
         AutoScaleMode = AutoScaleMode.Dpi; MinimumSize = new Size(620, 730);
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(18), ColumnCount = 1, RowCount = 13 };
@@ -129,7 +188,7 @@ internal sealed class MainWindow : Form
         for (int i = 0; i < 13; i++) layout.RowStyles.Add(new RowStyle(i == 6 ? SizeType.Percent : SizeType.AutoSize, i == 6 ? 100 : 0));
         enter.Text = "입력 후 Enter 한 번 누르기"; enter.AutoSize = true; enter.Checked = true; layout.Controls.Add(enter);
         returnToWork.Text = "입력 후 작업하던 창과 마우스 위치로 돌아가기"; returnToWork.AutoSize = true; returnToWork.Checked = true; layout.Controls.Add(returnToWork);
-        layout.Controls.Add(Caption("여러 줄 문구의 줄바꿈도 Enter로 입력됩니다."));
+        layout.Controls.Add(Caption("문구 전체를 붙여넣고 1.2초 후 Enter · 클립보드를 잠시 사용합니다."));
         start.Text = "예약 시작"; start.Size = new Size(260, 40);
         stop.Text = "취소 (Esc)"; stop.Size = new Size(260, 40); stop.Enabled = false;
         layout.Controls.Add(Row(start, stop));
@@ -210,7 +269,7 @@ internal sealed class MainWindow : Form
             if (!escRegistered) throw new InvalidOperationException("Esc 취소 단축키 등록 실패. 다른 예약 프로그램을 종료해 주세요.");
             borrowedDesktop = false; pending = phrase.Text.Replace("\r\n", "\n").Replace('\r', '\n');
             appendEnter = enter.Checked; schedule.Start(Desktop.Now, delay, interval, repeat.Checked);
-            lastTick = Desktop.Now; stage = 0; offset = 0; active = true; Configure(); Progress();
+            lastTick = Desktop.Now; stage = 0; active = true; Configure(); Progress();
         } catch (Exception ex) { Finish(ex.Message); }
     }
     void PrepareTarget() {
@@ -258,16 +317,19 @@ internal sealed class MainWindow : Form
                 CheckTarget(true); stage = 3;
             } else if (stage == 3) {
                 CheckTarget(true);
-                // Small batches leave the UI and Esc cancellation responsive.
-                int end = Math.Min(pending.Length, offset + 32);
-                if (end < pending.Length && end > offset && Char.IsHighSurrogate(pending[end-1])) end++;
-                while (offset < end) Desktop.Character(pending[offset++]);
-                if (offset == pending.Length) {
-                    if (appendEnter) Desktop.Character('\n');
-                    ReturnDesktop();
-                    if (!schedule.Complete(Desktop.Now)) { Finish("입력 신호 전송 완료. 대상 화면에서 결과를 확인하세요."); return; }
-                    stage = 0; offset = 0;
-                }
+                clipboard.Begin(pending);
+                stage = 4; inputDue = now + 150;
+            } else if (stage == 4 && now >= inputDue) {
+                CheckTarget(true); clipboard.Validate(); Desktop.Paste();
+                stage = 5; inputDue = now + 1200;
+            } else if (stage == 5 && now >= inputDue) {
+                CheckTarget(true);
+                if (appendEnter) Desktop.Character('\n');
+                stage = 6; inputDue = now + 1000;
+            } else if (stage == 6 && now >= inputDue) {
+                CheckTarget(true); clipboard.Restore(); ReturnDesktop();
+                if (!schedule.Complete(Desktop.Now)) { Finish("붙여넣기 / Enter 신호 전송 완료. 대상 화면에서 결과를 확인하세요."); return; }
+                stage = 0;
             }
             Progress();
         } catch (Exception ex) { Finish(ex.Message); }
@@ -275,12 +337,15 @@ internal sealed class MainWindow : Form
     static string Duration(long milliseconds) { long s = Math.Max(0, milliseconds) / 1000; return String.Format("{0}분 {1:00}초", s / 60, s % 60); }
     void Progress() {
         long now = Desktop.Now;
-        status.Text = "예약 시작됨 · " + (stage == 0 ? "대기 중" : "입력 중") + " · Esc로 취소\r\n경과 " + Duration(now - schedule.Started)
+        string phase = stage == 0 ? "대기 중" : stage <= 2 ? "입력칸 준비" : stage <= 4 ? "붙여넣기 준비" : stage == 5 ? "붙여넣기 반영 대기" : "Enter 반영 대기";
+        status.Text = "예약 시작됨 · " + phase + " · Esc로 취소\r\n경과 " + Duration(now - schedule.Started)
             + " / 다음 입력까지 " + Duration(Math.Max(0, schedule.Due - now + 999))
             + "\r\n" + (schedule.Repeating ? "반복 실행" : "한 번 실행") + " · 입력 신호 전송 " + schedule.Completed + "회";
     }
     void Finish(string message) {
-        bool wasActive = active; ReturnDesktop(); active = false; stage = 0;
+        bool wasActive = active;
+        try { clipboard.Restore(); } catch (Exception) { message += "\r\n기존 클립보드 복원에 실패했습니다."; }
+        ReturnDesktop(); active = false; stage = 0;
         if (escRegistered) { Desktop.UnregisterHotKey(Handle, 2); escRegistered = false; }
         pending = null; Configure();
         status.Text = message + (wasActive ? "\r\n총 경과 " + Duration(Desktop.Now - schedule.Started) + " · 입력 신호 전송 " + schedule.Completed + "회" : "");
@@ -297,6 +362,7 @@ internal sealed class MainWindow : Form
     }
     protected override void OnFormClosed(FormClosedEventArgs e) {
         timer.Stop(); timer.Dispose();
+        try { clipboard.Restore(); } catch (Exception) { /* Closing must still release hotkeys. */ }
         if (f8Registered) Desktop.UnregisterHotKey(Handle, 1);
         if (escRegistered) Desktop.UnregisterHotKey(Handle, 2);
         foreach (PositionPicker picker in pickers) picker.Dispose();
