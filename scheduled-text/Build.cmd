@@ -9,7 +9,7 @@ if not exist "%TEXT_CSC%" (
   exit /b 1
 )
 echo Building App.cs, Schedule.cs and Installation.cs using Windows .NET Framework...
-"%TEXT_CSC%" /nologo /warnaserror+ /target:winexe /platform:x64 /codepage:65001 /win32manifest:app.manifest /out:ScheduledText.exe /reference:System.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll App.cs Schedule.cs Installation.cs
+"%TEXT_CSC%" /nologo /warnaserror+ /target:winexe /platform:x64 /codepage:65001 /win32manifest:app.manifest /out:ScheduledText.exe /reference:System.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll App.cs Schedule.cs Installation.cs Diagnostics.cs
 if errorlevel 1 (
   echo Build failed. Do not run an older executable.
   exit /b 1

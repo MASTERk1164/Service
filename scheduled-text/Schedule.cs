@@ -14,6 +14,7 @@ public sealed class Schedule
         Started = now; Due = checked(now + delay); Interval = interval;
         Repeating = repeat; Completed = 0;
     }
+    public void Defer(long due) { Due = due; }
     public bool Ready(long now) { return now >= Due; }
     public bool Late(long now) { return now > Due && now - Due > 2000; }
     public bool Complete(long now)
@@ -21,7 +22,7 @@ public sealed class Schedule
         Completed++;
         if (!Repeating) return false;
         long next = checked(Due + Interval);
-        if (next <= now) throw new InvalidOperationException("입력 시간이 반복 간격을 초과하여 중단했습니다.");
+        if (next <= now) next = checked(next + checked(((now - next) / Interval + 1) * Interval));
         Due = next;
         return true;
     }

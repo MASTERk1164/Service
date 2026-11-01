@@ -144,7 +144,7 @@ internal sealed class MainWindow : Form
     readonly DateTimePicker date = new DateTimePicker(), time = new DateTimePicker();
     readonly TextBox phrase = new TextBox();
     readonly Label location = new Label(), status = new Label();
-    readonly Button pick = new Button(), start = new Button(), stop = new Button(), test = new Button();
+    readonly Button pick = new Button(), start = new Button(), stop = new Button(), test = new Button(), resume = new Button();
     readonly Timer timer = new Timer();
     readonly Schedule schedule = new Schedule();
     readonly ClipboardSession clipboard = new ClipboardSession();
@@ -154,14 +154,17 @@ internal sealed class MainWindow : Form
     readonly System.Collections.Generic.List<PositionPicker> pickers = new System.Collections.Generic.List<PositionPicker>();
     IntPtr target;
     bool active, escRegistered, f8Registered;
-    long inputDue, lastTick;
+    long inputDue, lastTick, activationUntil, retryAt;
+    string lastProblem = "";
+    int failures;
+    bool pasteAttempted;
     int stage;
     string pending;
     bool appendEnter;
 
     internal MainWindow()
     {
-        Text = "예약 문구 입력 v2.2 · 설치 지원";
+        Text = "예약 문구 입력 v2.3 · 예약 유지";
         Font = new Font("Malgun Gothic", 10); ClientSize = new Size(660, 800);
         AutoScaleMode = AutoScaleMode.Dpi; MinimumSize = new Size(640, 770);
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(18), ColumnCount = 1, RowCount = 14 };
@@ -190,13 +193,19 @@ internal sealed class MainWindow : Form
         returnToWork.Text = "입력 후 작업하던 창과 마우스 위치로 돌아가기"; returnToWork.AutoSize = true; returnToWork.Checked = true; layout.Controls.Add(returnToWork);
         layout.Controls.Add(Caption("문구 전체를 붙여넣고 1.2초 후 Enter · 클립보드를 잠시 사용합니다."));
         start.Text = "예약 시작"; start.Size = new Size(260, 40);
-        stop.Text = "취소 (Esc)"; stop.Size = new Size(260, 40); stop.Enabled = false;
+        stop.Text = "예약 취소"; stop.Size = new Size(260, 40); stop.Enabled = false;
         layout.Controls.Add(Row(start, stop));
-        test.Text = "5초 후 시험 입력 (1회)"; test.AutoSize = true; layout.Controls.Add(test);
+        test.Text = "5초 후 시험 입력 (1회)"; test.AutoSize = true; resume.Text = "확인 후 현재 회차 재시도"; resume.AutoSize = true; resume.Enabled = false; layout.Controls.Add(Row(test, resume));
         status.AutoSize = true; status.MinimumSize = new Size(0, 95); status.Text = "대기 중 · 위치와 문구를 설정하세요."; layout.Controls.Add(status);
         layout.Controls.Add(Caption("대기 중 다른 작업 가능 · 입력할 때는 대상 창을 잠깐 활성화합니다."));
         pick.Click += delegate { SelectPosition(); };
-        start.Click += delegate { StartSchedule(false); }; test.Click += delegate { StartSchedule(true); }; stop.Click += delegate { Finish("취소했습니다. 이미 입력된 내용은 유지됩니다."); };
+        start.Click += delegate { StartSchedule(false); }; test.Click += delegate { StartSchedule(true); };
+        resume.Click += delegate {
+            if (!active || stage != 9) return;
+            if (MessageBox.Show(this, "대상 입력칸과 전송 내역을 확인하세요. 이미 입력된 내용이 있다면 다시 입력될 수 있습니다. 현재 회차를 재시도할까요?", "재시도 확인", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+            try { clipboard.Restore(); ReturnDesktop(); schedule.Defer(Desktop.Now + 1000); stage = 0; pasteAttempted = false; lastProblem = ""; lastTick = Desktop.Now; Configure(); Progress(); }
+            catch (Exception ex) { lastProblem = ex.Message; Progress(); }
+        }; stop.Click += delegate { Finish("취소했습니다. 이미 입력된 내용은 유지됩니다."); };
         repeat.CheckedChanged += delegate { if (repeat.Checked) mode.SelectedIndex = 0; Configure(); };
         mode.SelectedIndexChanged += delegate { Configure(); };
         timer.Interval = 20; timer.Tick += delegate { Tick(); }; timer.Start(); Configure();
@@ -212,7 +221,7 @@ internal sealed class MainWindow : Form
         date.Enabled = time.Enabled = !active && !repeat.Checked && mode.SelectedIndex == 1;
         pick.Enabled = phrase.Enabled = repeat.Enabled = enter.Enabled = returnToWork.Enabled = start.Enabled = test.Enabled = !active;
         start.Text = active ? "예약 실행 중" : "예약 시작";
-        stop.Enabled = active;
+        stop.Enabled = active; resume.Enabled = active && stage == 9;
     }
     protected override void OnShown(EventArgs e) {
         base.OnShown(e); f8Registered = Desktop.RegisterHotKey(Handle, 1, 0x4000, 0x77);
@@ -269,11 +278,13 @@ internal sealed class MainWindow : Form
                 if (delay <= 0) throw new InvalidOperationException("현재보다 나중인 날짜·시간을 지정하세요.");
                 interval = Math.Max(1, delay);
             }
-            escRegistered = Desktop.RegisterHotKey(Handle, 2, 0x4000, 0x1B);
+            escRegistered = Desktop.RegisterHotKey(Handle, 2, 0x4003, 0x1B);
             // A busy global Esc key must not prevent starting; the cancel button always works.
             borrowedDesktop = false; pending = phrase.Text.Replace("\r\n", "\n").Replace('\r', '\n');
             appendEnter = enter.Checked; schedule.Start(Desktop.Now, delay, interval, !testing && repeat.Checked);
-            lastTick = Desktop.Now; stage = 0; active = true; timer.Start(); Configure(); Progress();
+            lastProblem = ""; failures = 0; pasteAttempted = false;
+            lastTick = Desktop.Now; stage = 0; active = true;
+            Diagnostics.Write("START delay=" + delay + " repeat=" + (!testing && repeat.Checked)); timer.Start(); Configure(); Progress();
         } catch (Exception ex) { Finish("시작 실패: " + ex.Message); MessageBox.Show(this, ex.Message, "예약 시작 실패", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
     }
     void PrepareTarget() {
@@ -282,7 +293,7 @@ internal sealed class MainWindow : Form
         if (!Desktop.GetCursorPos(out previousCursor)) throw new InvalidOperationException("현재 마우스 위치를 읽지 못했습니다.");
         borrowedDesktop = true;
         if (Desktop.IsIconic(target)) Desktop.ShowWindowAsync(target, 9);
-        Desktop.SetForegroundWindow(target);
+        Desktop.SetForegroundWindow(target); activationUntil = Desktop.Now + 3000;
     }
     void CheckTarget(bool focused) {
         if (!Desktop.IsWindow(target) || !Desktop.IsWindowVisible(target) || Desktop.IsIconic(target))
@@ -308,12 +319,20 @@ internal sealed class MainWindow : Form
         try {
             long now = Desktop.Now;
             if (!active) return;
-            if (stage != 0 && now - lastTick > 2000) throw new InvalidOperationException("절전 또는 실행 지연을 감지하여 중단했습니다.");
-            lastTick = now;
+            long gap = now - lastTick; lastTick = now;
+            if (stage == 9) { Progress(); return; }
+            if (gap > 30000) { PauseForReview("절전 또는 30초 이상 실행 지연을 감지했습니다. 대상 창을 확인한 뒤 재시도하세요."); return; }
+            if (stage == 7) {
+                if (now >= retryAt) { stage = 0; pasteAttempted = false; }
+                Progress(); return;
+            }
             if (stage == 0 && schedule.Ready(now)) {
-                if (schedule.Late(now)) throw new InvalidOperationException("예약을 2초 이상 놓쳐 중단했습니다.");
+                // A small scheduling delay must not disarm the reservation.
                 PrepareTarget(); stage = 1; inputDue = now + 250;
             } else if (stage == 1 && now >= inputDue) {
+                if (Desktop.Root(Desktop.GetForegroundWindow()) != target && now < activationUntil) {
+                    Desktop.SetForegroundWindow(target); inputDue = now + 250; Progress(); return;
+                }
                 position = clientPosition;
                 if (!Desktop.ClientToScreen(target, ref position)) throw new InvalidOperationException("저장한 위치를 찾지 못했습니다.");
                 CheckTarget(true); Desktop.Click(position); stage = 2; inputDue = now + 300;
@@ -324,7 +343,7 @@ internal sealed class MainWindow : Form
                 clipboard.Begin(pending);
                 stage = 4; inputDue = now + 150;
             } else if (stage == 4 && now >= inputDue) {
-                CheckTarget(true); clipboard.Validate(); Desktop.Paste();
+                CheckTarget(true); clipboard.Validate(); pasteAttempted = true; Desktop.Paste();
                 stage = 5; inputDue = now + 1200;
             } else if (stage == 5 && now >= inputDue) {
                 CheckTarget(true);
@@ -333,20 +352,36 @@ internal sealed class MainWindow : Form
             } else if (stage == 6 && now >= inputDue) {
                 CheckTarget(true); clipboard.Restore(); ReturnDesktop();
                 if (!schedule.Complete(Desktop.Now)) { Finish("붙여넣기 / Enter 신호 전송 완료. 대상 화면에서 결과를 확인하세요."); return; }
-                stage = 0;
+                stage = 0; pasteAttempted = false; lastProblem = "";
+                Diagnostics.Write("CYCLE_COMPLETE count=" + schedule.Completed);
             }
             Progress();
-        } catch (Exception ex) { Finish(ex.Message); }
+        } catch (Exception ex) {
+            if (pasteAttempted) PauseForReview("붙여넣기 이후 문제가 발생했습니다. 중복 입력 방지를 위해 확인 대기: " + ex.Message);
+            else RetryBeforePaste(ex.Message);
+        }
+    }
+    void RetryBeforePaste(string reason) {
+        try { clipboard.Restore(); } catch (Exception ex) { PauseForReview("클립보드 복원 확인 필요: " + ex.Message); return; }
+        ReturnDesktop(); failures++; lastProblem = reason;
+        stage = 7; retryAt = Desktop.Now + 5000; Configure();
+        Diagnostics.Write("RETRY_BEFORE_PASTE #" + failures + " " + reason); Progress();
+    }
+    void PauseForReview(string reason) {
+        try { clipboard.Restore(); } catch (Exception) { reason += " / 클립보드 복원 실패"; }
+        ReturnDesktop(); lastProblem = reason; stage = 9; Configure();
+        Diagnostics.Write("PAUSED " + reason); Progress();
     }
     static string Duration(long milliseconds) { long s = Math.Max(0, milliseconds) / 1000; return String.Format("{0}분 {1:00}초", s / 60, s % 60); }
     void Progress() {
         long now = Desktop.Now;
-        string phase = stage == 0 ? "대기 중" : stage <= 2 ? "입력칸 준비" : stage <= 4 ? "붙여넣기 준비" : stage == 5 ? "붙여넣기 반영 대기" : "Enter 반영 대기";
-        status.Text = "예약 시작됨 · " + phase + (escRegistered ? " · Esc / 취소 버튼으로 중단" : " · 취소 버튼으로 중단 (Esc 사용 불가)") + "\r\n경과 " + Duration(now - schedule.Started)
+        string phase = stage == 9 ? "확인 대기 · 예약 유지" : stage == 7 ? "5초 간격 재시도 · 예약 유지" : stage == 0 ? "대기 중" : stage <= 2 ? "입력칸 준비" : stage <= 4 ? "붙여넣기 준비" : stage == 5 ? "붙여넣기 반영 대기" : "Enter 반영 대기";
+        status.Text = "예약 시작됨 · " + phase + (escRegistered ? " · Ctrl+Alt+Esc / 취소 버튼으로 중단" : " · 취소 버튼으로 중단") + "\r\n경과 " + Duration(now - schedule.Started)
             + " / 다음 입력까지 " + Duration(Math.Max(0, schedule.Due - now + 999))
-            + "\r\n" + (schedule.Repeating ? "반복 실행" : "한 번 실행") + " · 입력 신호 전송 " + schedule.Completed + "회";
+            + "\r\n" + (schedule.Repeating ? "반복 실행" : "한 번 실행") + " · 입력 신호 전송 " + schedule.Completed + "회" + (lastProblem.Length > 0 ? "\r\n최근 상태: " + lastProblem : "");
     }
     void Finish(string message) {
+        Diagnostics.Write("STOP " + message);
         bool wasActive = active;
         try { clipboard.Restore(); } catch (Exception) { message += "\r\n기존 클립보드 복원에 실패했습니다."; }
         ReturnDesktop(); active = false; stage = 0;

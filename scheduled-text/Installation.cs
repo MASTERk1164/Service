@@ -16,7 +16,7 @@ internal static class Installation
             string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
             string exe = Path.Combine(destination, "ScheduledText.exe");
             Directory.CreateDirectory(destination);
-            string[] files = { "ScheduledText.exe", "App.cs", "Schedule.cs", "Installation.cs", "app.manifest", "Build.cmd", "Start.cmd", "Install.cmd", "README.txt", "SECURITY-REVIEW.txt", "SHA256SUMS.txt" };
+            string[] files = { "ScheduledText.exe", "App.cs", "Schedule.cs", "Installation.cs", "Diagnostics.cs", "app.manifest", "Build.cmd", "Start.cmd", "Install.cmd", "README.txt", "SECURITY-REVIEW.txt", "SHA256SUMS.txt" };
             if (!String.Equals(source.TrimEnd('\\'), destination.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)) {
                 foreach (string name in files) File.Copy(Path.Combine(source, name), Path.Combine(destination, name), true);
             }
@@ -34,7 +34,7 @@ internal static class Installation
             script += "(\r\n del /q \"" + uninstall + "\"\r\n rmdir \"" + destination + "\" 2>nul\r\n)\r\n";
             File.WriteAllText(uninstall, script, new UTF8Encoding(false));
             using (RegistryKey key = Registry.CurrentUser.CreateSubKey("Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\ScheduledText")) {
-                key.SetValue("DisplayName", "예약 문구 입력"); key.SetValue("DisplayVersion", "2.2");
+                key.SetValue("DisplayName", "예약 문구 입력"); key.SetValue("DisplayVersion", "2.3");
                 key.SetValue("InstallLocation", destination); key.SetValue("DisplayIcon", "\"" + exe + "\",0");
                 string command = "\"" + Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe") + "\" /d /c \"\"" + uninstall + "\"\"";
                 key.SetValue("UninstallString", command); key.SetValue("NoModify", 1, RegistryValueKind.DWord); key.SetValue("NoRepair", 1, RegistryValueKind.DWord);
