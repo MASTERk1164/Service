@@ -7,6 +7,6 @@ if [ -d /workspace/toolchain/usr ]; then
 fi
 mkdir -p dist
 (cd src && "${WINDRES:-x86_64-w64-mingw32-windres}" --preprocessor="${CC:-x86_64-w64-mingw32-gcc-posix}" --preprocessor-arg=-E --preprocessor-arg=-xc --preprocessor-arg=-DRC_INVOKED app.rc ../dist/app-res.o)
-"${CC:-x86_64-w64-mingw32-gcc-posix}" -std=c11 -Os -Wall -Wextra -Werror -municode -mwindows -static -o dist/ScheduledClick.exe src/main.c dist/app-res.o -lwinhttp -lcomctl32 -luser32 -lgdi32
+"${CC:-x86_64-w64-mingw32-gcc-posix}" -std=c11 -Os -Wall -Wextra -Werror -municode -mwindows -static -o dist/ScheduledClick.exe src/main.c dist/app-res.o -lcomctl32 -luser32 -lgdi32
 (cd installer && "${MAKENSIS:-makensis}" setup.nsi)
 (cd dist && sha256sum ScheduledClick.exe Setup.exe > SHA256SUMS)

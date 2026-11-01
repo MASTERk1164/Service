@@ -3,11 +3,14 @@ from pathlib import Path
 import subprocess
 import tempfile
 source = Path('src/main.c').read_text()
-logic = source[source.index('static int waitUntil('):source.index('static DWORD WINAPI synchronize(')]
+logic = source[source.index('static int waitUntil('):source.index('static HWND control(')]
 stub = r'''
 #include <stdint.h>
 #include <assert.h>
 #include <stdio.h>
+typedef int BOOL;
+#define TRUE 1
+#define FALSE 0
 typedef uint64_t ULONGLONG; typedef unsigned DWORD; typedef void *LPVOID;
 typedef struct {int x,y;} POINT;
 typedef struct {int type;struct {int dwFlags;} mi;} INPUT;
@@ -17,8 +20,8 @@ typedef struct {int type;struct {int dwFlags;} mi;} INPUT;
 #define MOUSEEVENTF_LEFTDOWN 1
 #define MOUSEEVENTF_LEFTUP 2
 #define DONE 1
-static int win,cancelEvent,earlyClick,repeatCount,delayMs,stopAfterFirst,cancelled,done,useServer;
-static ULONGLONG target,pcTarget,now,clicks[64];static int count;
+static int win,cancelEvent,repeatCount,delayMs,stopAfterFirst,cancelled,done;
+static ULONGLONG target,preTarget[2],now,clicks[64];static int count;static BOOL preEnabled[2];
 static ULONGLONG ticks(void){return now;}
 static int WaitForSingleObject(int event,DWORD ms){(void)event;if(cancelled)return 0;now+=(ULONGLONG)ms*10000;return 258;}
 static void SetCursorPos(int x,int y){assert(x==10&&y==20);}
@@ -27,27 +30,19 @@ static unsigned SendInput(unsigned n,INPUT *input,int size){(void)input;(void)si
 static void PostMessage(int w,int m,int result,int l){(void)w;(void)m;(void)l;done=result;}
 '''
 tests = r'''
-static void reset(void){now=0;useServer=0;pcTarget=20000000;target=10000000;count=0;cancelled=0;done=-1;stopAfterFirst=0;delayMs=50;repeatCount=3;}
+static void reset(void){now=0;target=20000000;preTarget[0]=10000000;preTarget[1]=15000000;preEnabled[0]=preEnabled[1]=0;count=0;cancelled=0;done=-1;stopAfterFirst=0;delayMs=50;repeatCount=3;}
 int main(void){
- reset();earlyClick=1;run(NULL);assert(done==0&&count==5);assert(clicks[0]==9500000);for(int i=1;i<5;i++)assert(clicks[i]==target+(i-1)*500000);
- reset();earlyClick=0;run(NULL);assert(done==0&&count==4&&clicks[0]==target);
- reset();earlyClick=1;repeatCount=0;run(NULL);assert(count==2&&clicks[1]==target);
- reset();earlyClick=1;stopAfterFirst=1;run(NULL);assert(done==1&&count==1);
- reset();earlyClick=1;now=target;run(NULL);assert(count==4&&clicks[0]==target);
- reset();earlyClick=1;now=target+30000000;run(NULL);assert(done==3&&count==0);
- reset();earlyClick=1;target=103700000;run(NULL);assert(done==0&&count==5&&clicks[0]==103200000&&clicks[1]==103700000);
- reset();earlyClick=0;repeatCount=0;target=100100000;run(NULL);assert(count==1&&clicks[0]==target);
- reset();earlyClick=0;repeatCount=0;target=109900000;run(NULL);assert(count==1&&clicks[0]==target);
-
- reset();earlyClick=0;useServer=1;run(NULL);assert(done==0&&count==8&&clicks[4]==pcTarget);
- reset();earlyClick=1;useServer=1;run(NULL);assert(done==0&&count==10&&clicks[5]==pcTarget-500000);
- reset();earlyClick=0;useServer=1;pcTarget=target;run(NULL);assert(done==0&&count==8);for(int i=0;i<4;i++)assert(clicks[2*i]==clicks[2*i+1]);
- reset();earlyClick=0;useServer=1;pcTarget=target+250000;run(NULL);assert(done==0&&count==8);for(int i=1;i<count;i++)assert(clicks[i]>=clicks[i-1]);assert(clicks[1]<target+500000);
- reset();earlyClick=0;useServer=1;pcTarget=5000000;run(NULL);assert(done==0&&count==8&&clicks[0]==pcTarget&&clicks[4]==target);
- reset();earlyClick=0;useServer=1;stopAfterFirst=1;run(NULL);assert(done==1&&count==1);
- reset();earlyClick=0;useServer=1;target=1;now=30000000;pcTarget=50000000;run(NULL);assert(done==3&&count==4&&clicks[0]==pcTarget);
- reset();earlyClick=0;useServer=1;repeatCount=20;run(NULL);assert(done==0&&count==42);
- puts("PASS: dual clocks, overlapping/equal/reversed deadlines, independent counts, cancellation, stale fallback; early/main timing, counts, cancellation, missed early slot, stale deadline");
+ reset();run(NULL);assert(done==0&&count==4&&clicks[0]==target);
+ reset();preEnabled[0]=preEnabled[1]=1;run(NULL);assert(done==0&&count==6&&clicks[0]==10000000&&clicks[1]==15000000);for(int i=2;i<6;i++)assert(clicks[i]==target+(i-2)*500000);
+ reset();preEnabled[1]=1;repeatCount=0;run(NULL);assert(done==0&&count==2&&clicks[0]==preTarget[1]&&clicks[1]==target);
+ reset();preEnabled[0]=preEnabled[1]=1;preTarget[0]=17000000;preTarget[1]=12000000;run(NULL);assert(count==6&&clicks[0]==12000000&&clicks[1]==17000000);
+ reset();preEnabled[0]=preEnabled[1]=1;preTarget[1]=preTarget[0];run(NULL);assert(count==6&&clicks[0]==clicks[1]);
+ reset();preEnabled[0]=preEnabled[1]=1;stopAfterFirst=1;run(NULL);assert(done==1&&count==1);
+ reset();cancelled=1;run(NULL);assert(done==1&&count==0);
+ reset();preEnabled[0]=preEnabled[1]=1;repeatCount=20;run(NULL);assert(done==0&&count==23);
+ reset();preEnabled[0]=1;preTarget[0]=1;now=30000000;target=50000000;run(NULL);assert(done==3&&count==4&&clicks[0]==target);
+ reset();target=103700000;repeatCount=0;run(NULL);assert(count==1&&clicks[0]==target);
+ puts("PASS: two single pre-clicks, main repeats unchanged, disabled slots, reordered/equal times, Esc, stale slot, hundredths");
 }
 '''
 with tempfile.TemporaryDirectory() as d:
