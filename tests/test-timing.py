@@ -21,16 +21,16 @@ typedef struct {int type;struct {int dwFlags;} mi;} INPUT;
 #define MOUSEEVENTF_LEFTUP 2
 #define DONE 1
 static int win,cancelEvent,repeatCount,delayMs,stopAfterFirst,cancelled,done;
-static ULONGLONG target,preTarget[2],now,clicks[64];static int count;static BOOL preEnabled[2];
+static ULONGLONG target,preTarget[2],now,clicks[64];static int count;static int failMove;static BOOL preEnabled[2];
 static ULONGLONG ticks(void){return now;}
 static int WaitForSingleObject(int event,DWORD ms){(void)event;if(cancelled)return 0;now+=(ULONGLONG)ms*10000;return 258;}
-static void SetCursorPos(int x,int y){assert(x==10&&y==20);}
+static int SetCursorPos(int x,int y){assert(x==10&&y==20);return !failMove;}
 static int GetCursorPos(POINT *p){p->x=10;p->y=20;return 1;}
 static unsigned SendInput(unsigned n,INPUT *input,int size){(void)input;(void)size;clicks[count++]=now;if(stopAfterFirst)cancelled=1;return n;}
 static void PostMessage(int w,int m,int result,int l){(void)w;(void)m;(void)l;done=result;}
 '''
 tests = r'''
-static void reset(void){now=0;target=20000000;preTarget[0]=10000000;preTarget[1]=15000000;preEnabled[0]=preEnabled[1]=0;count=0;cancelled=0;done=-1;stopAfterFirst=0;delayMs=50;repeatCount=3;}
+static void reset(void){failMove=0;now=0;target=20000000;preTarget[0]=10000000;preTarget[1]=15000000;preEnabled[0]=preEnabled[1]=0;count=0;cancelled=0;done=-1;stopAfterFirst=0;delayMs=50;repeatCount=3;}
 int main(void){
  reset();run(NULL);assert(done==0&&count==4&&clicks[0]==target);
  reset();preEnabled[0]=preEnabled[1]=1;run(NULL);assert(done==0&&count==6&&clicks[0]==10000000&&clicks[1]==15000000);for(int i=2;i<6;i++)assert(clicks[i]==target+(i-2)*500000);
@@ -42,7 +42,8 @@ int main(void){
  reset();preEnabled[0]=preEnabled[1]=1;repeatCount=20;run(NULL);assert(done==0&&count==23);
  reset();preEnabled[0]=1;preTarget[0]=1;now=30000000;target=50000000;run(NULL);assert(done==3&&count==4&&clicks[0]==target);
  reset();target=103700000;repeatCount=0;run(NULL);assert(count==1&&clicks[0]==target);
- puts("PASS: two single pre-clicks, main repeats unchanged, disabled slots, reordered/equal times, Esc, stale slot, hundredths");
+ reset();failMove=1;run(NULL);assert(done==2&&count==0);
+ puts("PASS: cursor move failure stops clicks; two single pre-clicks, main repeats unchanged, disabled slots, reordered/equal times, Esc, stale slot, hundredths");
 }
 '''
 with tempfile.TemporaryDirectory() as d:

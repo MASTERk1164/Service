@@ -40,7 +40,7 @@ static int waitUntil(ULONGLONG deadline){
 }
 static int clickAt(POINT p){
     if(WaitForSingleObject(cancelEvent,0)==WAIT_OBJECT_0)return 1;
-    SetCursorPos(p.x,p.y);
+    if(!SetCursorPos(p.x,p.y))return 2;
     INPUT in[2]={0};in[0].type=in[1].type=INPUT_MOUSE;
     in[0].mi.dwFlags=MOUSEEVENTF_LEFTDOWN;in[1].mi.dwFlags=MOUSEEVENTF_LEFTUP;
     if(SendInput(2,in,sizeof(INPUT))!=2){
